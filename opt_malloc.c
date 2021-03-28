@@ -14,10 +14,10 @@ typedef struct chunk {
 	struct chunk* next;
 } chunk;
 
-// 8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096
-// 12, 24, 48, 96, 192, 384, 768, 1536, 3072
+long NUM_BUCKETS = 10;
 static chunk* buckets[10];	// initially all NULL
 size_t bucket_sizes[] = {8, 16, 32, 64, 128, 256, 512, 1024, 2048, 4096};
+
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 const size_t PAGE_SIZE = 4096;
 const size_t MIN_ALLOCATION = 8;
@@ -80,11 +80,13 @@ bucket_add(void* addr, long b_idx)
 		//(buckets + b_idx)->prev = toAdd;
 	}
 
+	buckets[b_idx] = toAdd;
+
 	return insIdx;
 }
 
 void
-bucket_coalesce(long b_idx)
+bucket_coalesce()
 {
 	char del = 0;
 
@@ -142,16 +144,30 @@ xmalloc(size_t bytes)
 			ptr = (void*)(tmp); // header filled out when added to list
 			bucket_delete(b_idx, 0);
 		}
-		// No entry of that size in list, so put three new ones in
+		// No entry of that size in list, so look for available larger chunks to split
 		else {
 
-			for (int i = 0; i < 3; i++) {
-				void* addr = mmap(NULL, bucket_sizes[b_idx], PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-				if (tmp == (void*)(-1))
-					perror("xmalloc: mmap() failed");
+			// get b_idx to first list with available chunks
+			long off = 0
+			while (!buckets[b_idx + off]) {
+				
+				if (b_idx + off == NUM_BUCKETS - 1) {
+					void* addr = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+					bucket_add(addr, PAGE_SIZE);
+					break;
+				}
 
-				bucket_add(addr, b_idx);
+				off += 1;
 			}
+
+			// Let memory flow down buckets
+			ptr = buckets[b_idx + off];
+			bucket_delete(b_idx + off, 0);
+
+			do {
+				void* split = (uintptr_t)ptr + bucket_sizes[b_idx + off];
+				bucket_add(split, b_idx + off);				
+			} while (off--);
 
 			pthread_mutex_unlock(&mutex);
 			return xmalloc(bytes - sizeof(chunk));
