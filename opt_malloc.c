@@ -67,17 +67,12 @@ bucket_add(void* addr, long b_idx)
 
 		toAdd->size = bucket_sizes[b_idx];
 		toAdd->next = tmp;
-		//tmp->prev = toAdd;
-		if (tmp_prev) {
-		//	toAdd->prev = tmp_prev;
+		if (tmp_prev)
 			tmp_prev->next = toAdd;
-		}
 	}
 	else {
 		toAdd->size = bucket_sizes[b_idx];
-		toAdd->next = buckets[b_idx];//(buckets + b_idx);
-		//toAdd->prev = NULL;
-		//(buckets + b_idx)->prev = toAdd;
+		toAdd->next = buckets[b_idx];
 	}
 
 	buckets[b_idx] = toAdd;
@@ -86,47 +81,66 @@ bucket_add(void* addr, long b_idx)
 }
 
 void
-bucket_coalesce()
-{
-	char del = 0;
-
-	do {
-		
-		chunk* tmp = buckets[b_idx];
-		chunk* tmp_prev = NULL;
-		del = 0;
-
-		while (tmp) {
-
-			if (tmp_prev && (void*)(tmp_prev) + tmp_prev->size == (void*)(tmp)) {
-				tmp_prev->size = tmp_prev->size + tmp->size;
-				tmp_prev->next = tmp_prev->next->next;
-				del = 1;
-			}
-
-			tmp_prev = tmp;
-			tmp = tmp->next;
-		}
-
-	} while (del == 1);
-
-}
-
-void
 bucket_delete(long b_idx, long idx)
 {
 	chunk* tmp = buckets[b_idx];
+
+	//printf("b_idx: %ld\n", b_idx);
+	//printf("idx: %ld\n", idx);
+	//printf("tmp: %p\n", tmp);
+	//dump_buckets();
 
 	if (idx == 0) {
 		buckets[b_idx] = tmp->next;
 		return;
 	}
 
-	while ((idx--) - 1)
+	while (--idx)
 		tmp = tmp->next;
 
-	tmp->next = tmp->next->next;
+	if (tmp->next)
+		tmp->next = tmp->next->next;
+	//dump_buckets();
 }
+
+void
+bucket_coalesce()
+{
+	chunk* tmp = NULL;
+	chunk* tmp_prev = NULL;
+	char del = 0;
+	long idx = 0;
+
+	do {
+
+		del = 0;
+
+		for (int i = 0; i < NUM_BUCKETS; i++) {
+
+			tmp = buckets[i];
+			tmp_prev = NULL;
+			idx = 0;
+
+			while (tmp) {
+
+				if (i < NUM_BUCKETS - 1 && tmp_prev && (uintptr_t)(tmp_prev) + tmp_prev->size == (uintptr_t)(tmp)) {
+					bucket_delete(i, idx - 1); // remove tmp_prev and tmp from lower list
+					bucket_delete(i, idx - 1);
+					bucket_add((void*)tmp_prev, i + 1); // add tmp_prev to next list up
+
+					del = 1;
+				}
+
+				idx += 1;
+				tmp_prev = tmp;
+				tmp = tmp->next;
+			} // end while
+
+		} // end for
+
+	} while (del == 1);
+
+} // end bucket_coalesce
 
 void*
 xmalloc(size_t bytes)
@@ -136,7 +150,7 @@ xmalloc(size_t bytes)
 	void* ptr = NULL;
 	long b_idx = bucket(bytes);
 
-	if (bytes <= PAGE_SIZE) {
+	if (bytes < PAGE_SIZE) {
 		pthread_mutex_lock(&mutex);
 		chunk* tmp = buckets[b_idx];
 
@@ -148,12 +162,12 @@ xmalloc(size_t bytes)
 		else {
 
 			// get b_idx to first list with available chunks
-			long off = 0
+			long off = 0;
 			while (!buckets[b_idx + off]) {
 				
 				if (b_idx + off == NUM_BUCKETS - 1) {
-					void* addr = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
-					bucket_add(addr, PAGE_SIZE);
+					ptr = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
+					bucket_add(ptr, b_idx + off);
 					break;
 				}
 
@@ -161,13 +175,15 @@ xmalloc(size_t bytes)
 			}
 
 			// Let memory flow down buckets
-			ptr = buckets[b_idx + off];
+			ptr = (void*)buckets[b_idx + off];
 			bucket_delete(b_idx + off, 0);
 
-			do {
-				void* split = (uintptr_t)ptr + bucket_sizes[b_idx + off];
-				bucket_add(split, b_idx + off);				
-			} while (off--);
+			while (off) {
+				void* split = (void*)((uintptr_t)ptr + bucket_sizes[b_idx + --off]);
+				bucket_add(split, b_idx + off);
+			}
+
+			bucket_add(ptr, b_idx);
 
 			pthread_mutex_unlock(&mutex);
 			return xmalloc(bytes - sizeof(chunk));
@@ -202,7 +218,7 @@ xfree(void* ptr)
 
 		pthread_mutex_lock(&mutex);
 		bucket_add((void*)cPtr, b_idx);
-		bucket_coalesce(b_idx);
+		bucket_coalesce();
 		pthread_mutex_unlock(&mutex);
 	}
 	else {
@@ -249,4 +265,28 @@ xrealloc(void* prev, size_t bytes)
 
 	return ptr + sizeof(chunk);
 }
+
+void
+dump_buckets()
+{
+	chunk* tmp = NULL;
+
+	for (int i = 0; i < NUM_BUCKETS; i++) {
+		tmp = buckets[i];
+
+		printf("%ld Bytes:\n", bucket_sizes[i]);
+
+		while (tmp) {
+			printf("addr: %p ; size: %lu\n", tmp, tmp->size);
+			tmp = tmp->next;
+		}
+
+		printf("\n");
+	}
+
+}
+
+
+
+
 

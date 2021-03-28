@@ -8,5 +8,6 @@ void  xfree(void* ptr);
 void* xrealloc(void* prev, size_t bytes);
 
 void dump_flist();
+void dump_buckets();
 
 #endif
