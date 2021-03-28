@@ -98,8 +98,7 @@ bucket_delete(long b_idx, long idx)
 	while (--idx)
 		tmp = tmp->next;
 
-	if (tmp->next)
-		tmp->next = tmp->next->next;
+	tmp->next = tmp->next->next;
 	//dump_buckets();
 }
 
