@@ -85,13 +85,11 @@ bucket_delete(long b_idx, long idx)
 {
 	chunk* tmp = buckets[b_idx];
 
-	//printf("b_idx: %ld\n", b_idx);
-	//printf("idx: %ld\n", idx);
-	//printf("tmp: %p\n", tmp);
-	//dump_buckets();
-
-	if (idx == 0) {
+	if (idx == 0 && tmp) {
 		buckets[b_idx] = tmp->next;
+		return;
+	}
+	else if (idx == 0) {
 		return;
 	}
 
@@ -99,7 +97,6 @@ bucket_delete(long b_idx, long idx)
 		tmp = tmp->next;
 
 	tmp->next = tmp->next->next;
-	//dump_buckets();
 }
 
 void
@@ -127,6 +124,7 @@ bucket_coalesce()
 					bucket_delete(i, idx - 1);
 					bucket_add((void*)tmp_prev, i + 1); // add tmp_prev to next list up
 
+					idx -= 1;
 					del = 1;
 				}
 
@@ -284,8 +282,4 @@ dump_buckets()
 	}
 
 }
-
-
-
-
 
