@@ -85,11 +85,10 @@ bucket_delete(long b_idx, long idx)
 {
 	chunk* tmp = buckets[b_idx];
 
-	if (idx == 0 && tmp) {
-		buckets[b_idx] = tmp->next;
-		return;
-	}
-	else if (idx == 0) {
+	if (idx == 0) {
+		if (tmp)
+			buckets[b_idx] = tmp->next;
+
 		return;
 	}
 
@@ -147,7 +146,7 @@ xmalloc(size_t bytes)
 	void* ptr = NULL;
 	long b_idx = bucket(bytes);
 
-	if (bytes < PAGE_SIZE) {
+	if (bytes <= PAGE_SIZE) {
 		pthread_mutex_lock(&mutex);
 		chunk* tmp = buckets[b_idx];
 
@@ -231,21 +230,17 @@ xrealloc(void* prev, size_t bytes)
 {
 	bytes += sizeof(chunk);
 
-	chunk* cPtr = (chunk*)(prev - sizeof(chunk));
+	chunk* cPtr = (chunk*)((uintptr_t)prev - sizeof(chunk));
 	void* ptr = NULL;
+	long b_idx_old = bucket(cPtr->size);
+	long b_idx_new = bucket(bytes);
 
 	if (bytes <= PAGE_SIZE) {
-		long b_idx_old = bucket(cPtr->size);
-		long b_idx_new = bucket(bytes);
-	
 		if (b_idx_new == b_idx_old)
 			ptr = prev;
 		else {
-			pthread_mutex_lock(&mutex);
-			ptr = buckets[b_idx_new];
-			bucket_delete(b_idx_new, 0);
-			memcpy(ptr, (void*)cPtr, bucket_sizes[b_idx_new]);
-			pthread_mutex_unlock(&mutex);
+			ptr = xmalloc(bytes);
+			memcpy(ptr, prev, bucket_sizes[b_idx_old] - sizeof(chunk));
 			xfree(prev);
 		}
 	}
@@ -254,13 +249,19 @@ xrealloc(void* prev, size_t bytes)
 
 		ptr = mmap(NULL, pages * PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANON, -1, 0);
 		if (ptr == (void*)(-1))
-			perror("xreallox: mmap() failed");
+			perror("xrealloc: mmap() failed");
 
 		memcpy(ptr, (void*)cPtr, pages * PAGE_SIZE);
 		xfree(prev);
+
+		cPtr = (chunk*)ptr;
+		cPtr->size = bucket_sizes[b_idx_new];
+		cPtr->next = NULL;
+
+		ptr += sizeof(chunk);
 	}
 
-	return ptr + sizeof(chunk);
+	return ptr;
 }
 
 void
