@@ -194,8 +194,7 @@ bucket_insert(long b_size)
 
 	if (idx == 0)
 		bkt_list = bkt;
-
-	if (tmp_prev)
+	else if (tmp_prev)
 		tmp_prev->next = bkt;
 
 	bkt->next = tmp;
