@@ -98,7 +98,7 @@ bucket_find(size_t size)
 			
 			for (int i = 0; i < bm_max; i++) {
 				
-				if (((tmp->used_map[chk >> 6] >> (chk & 0x40)) & 0x1) == 0)
+				if (((tmp->used_map[chk >> 6] >> (chk & 0x3F)) & 0x1) == 0)
 					break;
 
 				if (++chk == bm_max)
@@ -132,9 +132,9 @@ bucket_get(bkt_t* bkt)
 	
 	for (int i = 0; i < bm_max; i++) {
 				
-		if (((tmp->used_map[off >> 6] >> (off & 0x40)) & 0x1) == 0) {
-			ptr = bkt->mem + off * bkt->size;
-			tmp->used_map[off >> 6] |= 1 << (off & 0x40);
+		if (((tmp->used_map[off >> 6] >> (off & 0x3F)) & 0x1) == 0) {
+			ptr = (void*)((uintptr_t)bkt->mem + (uintptr_t)(off * bkt->size));
+			tmp->used_map[off >> 6] |= 1 << (off & 0x3F);
 			break;
 		}
 
@@ -176,7 +176,7 @@ bucket_insert(long b_size)
 	bkt_t* tmp = bkt_list;
 	bkt_t* tmp_prev = NULL;
 
-	bkt_t* bkt = (bkt_t*)(BKT_MEM + BKT_MEM_OFF);
+	bkt_t* bkt = (bkt_t*)((uintptr_t)BKT_MEM + (uintptr_t)BKT_MEM_OFF);
 	bkt->size = b_size;
 
 	void* addr = mmap(NULL, PAGE_SIZE, PROT_READ | PROT_WRITE, MAP_ANON | MAP_PRIVATE, -1, 0);
@@ -212,10 +212,10 @@ void
 bucket_put(void* mem, bkt_t* bkt)
 {
 	uintptr_t mem_off = (uintptr_t)mem - (uintptr_t)bkt;
-	long idx = mem_off / bkt->size;
+	long idx = (long)mem_off / (long)bkt->size;
 	long inner_idx = idx >> 6;
 
-	bkt->used_map[inner_idx] &= ~(1 << inner_idx);
+	bkt->used_map[inner_idx] &= ~(1 << (idx & 0x3F));
 }
 
 void*
